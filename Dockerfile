@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     libncurses5-dev \
     bedtools \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp/build
@@ -51,7 +52,7 @@ RUN ldconfig
 
 WORKDIR /app
 
-# Ubuntu doesn't allow pip install --system so put everything into a venv
+# Install uv and setup venv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 ENV UV_PROJECT_ENVIRONMENT="/opt/venv"
 RUN uv venv $UV_PROJECT_ENVIRONMENT --python=3.12
@@ -59,9 +60,17 @@ ENV VIRTUAL_ENV=$UV_PROJECT_ENVIRONMENT
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONPATH=/app:/opt/venv/lib/python3.12/site-packages
 
+# Install PyTorch first (required for flash-attn compilation)
 COPY pyproject.toml ./
+RUN uv pip install "torch~=2.8.0" "torchaudio~=2.8.0" torchvision
+
+# Install flash-attn (compile from source)
+RUN uv pip install flash-attn==2.8.3 --no-build-isolation
+
+# Install remaining dependencies
 RUN uv pip install -e .[notebook,test]
 
+# Copy application code
 COPY . .
 
 CMD ["/bin/bash"]
